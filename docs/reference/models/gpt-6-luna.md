@@ -1,0 +1,51 @@
+# GPT-6 Luna
+
+- Model ID: gpt-6-luna
+- Model type: reasoning
+- Current snapshot: gpt-6-luna
+
+Our most efficient model for focused, high-volume tasks.
+
+GPT-6 Luna is our most efficient model for focused, high-volume tasks.
+
+`reasoning.effort` supports `none`, `low`, `medium` (default), `high`, `xhigh`, and `max`.
+Use the Responses API for built-in tools and function calling. Chat Completions supports function calling only with `reasoning_effort` set to `none`.
+
+EU data residency is available with Standard, Fast, Flex, and Batch processing.
+See [data residency eligibility](https://developers.openai.com/api/docs/guides/your-data#which-models-and-features-are-eligible-for-data-residency).
+
+## Snapshots
+- gpt-6-luna
+
+## Current snapshot details
+- Context window: 1,050,000 tokens
+- Max input: 922,000 tokens
+- Max output: 128,000 tokens
+- Knowledge cutoff: 2026-05-18
+- Input modalities: text, image
+- Output modalities: text
+- Supported endpoints: responses, chat_completions, batch
+- Supported features: streaming, structured_outputs, function_calling, file_search, image_input, web_search, prompt_caching
+
+## Supported tools
+- web_search
+- file_search
+- image_generation
+- code_interpreter
+- hosted_shell
+- apply_patch
+- skills
+- computer_use
+- mcp
+- tool_search
+
+## Pricing notes
+- Cached input tokens are priced at 10% of the uncached input token rate.
+- Cache writes are billed at 1.25x the uncached input token rate.
+- Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request.
+- Regional processing adds a 10% premium where available. EU data residency is available with Standard, Fast, Flex, and Batch processing.
+- Batch and Flex are priced at 50% of Standard rates. Fast mode is priced at 2x the applicable rates.
+
+Playground: https://platform.openai.com/chat/edit?models=gpt-6-luna
+
+
