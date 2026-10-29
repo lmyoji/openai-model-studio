@@ -3,6 +3,7 @@ import type { AccountModel, ModelInfo } from './types'
 
 export const VERIFIED_AT = catalog.verifiedAt
 export const DOCUMENTED_MODELS: ModelInfo[] = catalog.models
+const SHUTDOWNS: Record<string, {date: string; replacement: string}> = catalog.deprecations
 export const FEATURED = ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6.1-terra', 'gpt-6-luna']
 
 export const SECTIONS = [
@@ -32,7 +33,10 @@ export function isRetired(model: ModelInfo, today = new Date().toISOString().sli
 
 export function modelForId(id: string, models = DOCUMENTED_MODELS): ModelInfo | undefined {
   const exact = models.find(m => m.id === id || m.snapshots.includes(id))
-  if (exact) return { ...exact, id }
+  if (exact) {
+    const shutdown = SHUTDOWNS[id]
+    return { ...exact, id, ...(shutdown ? {shutdownDate: shutdown.date, replacement: shutdown.replacement, deprecated: true} : {}) }
+  }
   if (id.startsWith('ft:')) {
     const base = modelForId(id.split(':')[1], models)
     if (base) return { ...base, id, name: id, undocumented: true }
