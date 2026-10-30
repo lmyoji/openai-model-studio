@@ -6,7 +6,18 @@ import { handleStudioRequest } from "../lib/studio/server";
 const worker = {
   fetch(request: Request, env: Cloudflare.Env, ctx: ExecutionContext<{ CONNECTORS?: ConnectorBinding }>) {
     if (new URL(request.url).pathname.startsWith('/api/studio/')) {
-      return handleStudioRequest(request, env.SESSION_SECRET);
+      // Dev: Vite studio-local-api middleware handles /api/studio with Node + OPENAI_STUDIO_PROXY.
+      // Never import undici here — it breaks the vinext RSC worker runner (Console.createTask).
+      if (import.meta.env.DEV) {
+        return handleStudioRequest(request, env.SESSION_SECRET, fetch);
+      }
+      return import("../lib/studio/outbound-fetch").then(({ createOutboundFetch }) =>
+        handleStudioRequest(
+          request,
+          env.SESSION_SECRET,
+          createOutboundFetch(env.OPENAI_STUDIO_PROXY),
+        ),
+      );
     }
     let binding = ctx.props?.CONNECTORS;
     // Local preview emulates the same request-scoped capability. This branch and

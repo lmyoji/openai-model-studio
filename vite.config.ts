@@ -5,6 +5,8 @@ import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { configureToolEnvironment } from "./scripts/tool-environment.mjs";
 import { sites } from "./scripts/vite/sites-vite-plugin";
 import { connectorPreview } from "./scripts/vite/connector-preview-plugin.mjs";
+import { handleStudioRequest } from "./lib/studio/server";
+import { studioLocalApi } from "./scripts/vite/studio-local-api-plugin.mjs";
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
@@ -15,10 +17,16 @@ const { d1, r2 } = hostingConfig;
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const managedLinux = readExecutionProfile() === "managed-linux";
 
+// Use a dedicated var — do NOT set HTTP(S)_PROXY globally; Wrangler proxies all Worker fetch and breaks vinext.
 const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_date: "2026-10-29",
   compatibility_flags: ["nodejs_compat"],
+  vars: {
+    OPENAI_STUDIO_PROXY:
+      process.env.OPENAI_STUDIO_PROXY ||
+      "http://127.0.0.1:7892,http://127.0.0.1:7897",
+  },
   d1_databases: d1
     ? [
         {
@@ -54,6 +62,7 @@ export default defineConfig(async ({ command }) => {
         : {}),
     },
     plugins: [
+      studioLocalApi({ handleStudioRequest }),
       vinext(),
       sites({ mockAuth: !managedLinux }),
       connectorPreview(),

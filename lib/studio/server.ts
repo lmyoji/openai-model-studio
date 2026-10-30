@@ -17,6 +17,17 @@ class HttpError extends Error {
   constructor(public status: number, message: string) { super(message) }
 }
 
+function upstreamErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : ''
+  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined
+  const code = cause && typeof cause === 'object' && cause !== null && 'code' in cause ? String((cause as { code: string }).code) : ''
+  const detail = `${code} ${cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : ''} ${message}`.toLowerCase()
+  if (/und_err_connect_timeout|etimedout|econnrefused|enotfound|fetch failed|network|socket hang up/.test(detail)) {
+    return '本地工作台无法连上 OpenAI API。会自动尝试本机代理 127.0.0.1:7892 和 7897，请确认其中一个已开启。不要设置 HTTP_PROXY/HTTPS_PROXY，否则页面可能无法启动。'
+  }
+  return '连接 OpenAI 失败，请检查网络或稍后重试。'
+}
+
 export function validateBaseUrl(value: unknown) {
   if (typeof value !== 'string') throw new HttpError(400, '请选择有效的 OpenAI API 地址。')
   let url: URL
@@ -139,7 +150,13 @@ export async function handleStudioRequest(request: Request, secret: string, fetc
     assertSameOrigin(request)
     const url = new URL(request.url)
     const route = url.pathname.replace('/api/studio/', '')
-    if (route === 'health' && request.method === 'GET') return json({ ok: true, service: 'OpenAI Studio', sessionEncryption: Boolean(secret && secret.length >= 32) })
+    if (route === 'health' && request.method === 'GET') {
+      return json({
+        ok: true,
+        service: 'OpenAI Studio',
+        sessionEncryption: Boolean(secret && secret.length >= 32),
+      })
+    }
     const session = await openSession(request, secret)
     if (route === 'session') {
       if (request.method === 'GET') return json(publicStatus(session))
@@ -181,11 +198,10 @@ export async function handleStudioRequest(request: Request, secret: string, fetc
     for (const name of ['content-type', 'accept', 'openai-beta']) { const value = request.headers.get(name); if (value) headers.set(name, value) }
     if (session.organization) headers.set('OpenAI-Organization', session.organization)
     if (session.project) headers.set('OpenAI-Project', session.project)
-    const upstream = await fetcher(session.baseUrl + path, {
-      method: request.method, headers, body: request.body && !['GET', 'HEAD'].includes(request.method) ? limitedStream(request.body) : undefined,
-      redirect: 'error', signal: request.signal,
-      ...({ duplex: 'half' } as Record<string, string>),
-    })
+    const body = request.body && !['GET', 'HEAD'].includes(request.method) ? limitedStream(request.body) : undefined
+    const upstreamInit: RequestInit & { duplex?: 'half' } = { method: request.method, headers, body, redirect: 'error', signal: request.signal }
+    if (body) upstreamInit.duplex = 'half'
+    const upstream = await fetcher(session.baseUrl + path, upstreamInit)
     const responseHeaders = new Headers({ 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'same-origin' })
     for (const name of ['content-type', 'content-disposition', 'x-request-id', 'openai-processing-ms', 'retry-after', 'x-ratelimit-remaining-requests', 'x-ratelimit-remaining-tokens']) {
       const value = upstream.headers.get(name)
@@ -195,6 +211,6 @@ export async function handleStudioRequest(request: Request, secret: string, fetc
   } catch (error) {
     if (error instanceof HttpError) return json({ error: { message: error.message } }, error.status)
     if (error instanceof Error && error.name === 'AbortError') return json({ error: { message: '请求已停止。' } }, 499)
-    return json({ error: { message: '连接 OpenAI 失败，请检查网络或稍后重试。' } }, 502)
+    return json({ error: { message: upstreamErrorMessage(error) } }, 502)
   }
 }

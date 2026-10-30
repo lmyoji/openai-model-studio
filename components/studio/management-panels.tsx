@@ -43,8 +43,16 @@ export function SettingsPanel() {
     setSaving(true);setError('')
     try {
       const response = await fetch('/api/studio/session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({apiKey,baseUrl,organization,project,remember})})
-      await ensureSuccess(response); await refreshSession(); setApiKey('');setShowKey(false);toast.success('连接设置已保存')
-      await syncModels()
+      await ensureSuccess(response)
+      await refreshSession()
+      setApiKey('')
+      setShowKey(false)
+      toast.success('连接设置已保存')
+      try {
+        await syncModels()
+      } catch (e) {
+        setError(`Key 已保存，但测试连接（拉取模型列表）失败：${(e as Error).message}`)
+      }
     } catch(e) { setError((e as Error).message) } finally { setSaving(false) }
   }
   async function disconnect() {

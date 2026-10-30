@@ -9,7 +9,7 @@ export function errorMessage(value: unknown, status?: number) {
   const data = value && typeof value === 'object' ? value as Record<string, unknown> : {}
   const error = data.error
   let message = typeof error === 'string' ? error : error && typeof error === 'object' ? String((error as Record<string, unknown>).message || JSON.stringify(error)) : typeof value === 'string' ? value : '请求失败'
-  const advice: Record<number, string> = { 401: '请检查 API Key 是否有效，或重新保存连接设置。', 403: '此密钥可能没有对应模型或项目权限。', 404: '模型或接口不存在，也可能已停用。', 429: '请检查账户余额、配额和速率限制，稍后再试。', 413: '文件或请求过大，请缩小后重试。' }
+  const advice: Record<number, string> = { 401: '请检查 API Key 是否有效，或重新保存连接设置。', 403: '此密钥可能没有对应模型或项目权限。', 404: '模型或接口不存在，也可能已停用。', 429: '请检查账户余额、配额和速率限制，稍后再试。', 413: '文件或请求过大，请缩小后重试。', 502: '服务端转发失败。请确认本机 7892 或 7897 代理已开启（会自动选用能连上的那个）。' }
   if (status && advice[status]) message = `${advice[status]}\n${message}`
   return message
 }

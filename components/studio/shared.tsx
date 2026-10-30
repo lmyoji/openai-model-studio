@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ArrowUpRight, Check, ChevronDown, Copy, Download, ExternalLink, LoaderCircle, SlidersHorizontal, Square, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { isRetired, modelForId, sortModels, supportsSection } from '@/lib/studio/catalog'
@@ -51,23 +51,83 @@ export function EmptyResult({ icon, title, description }: { icon: ReactNode; tit
 
 function imageMime(data: string) { return data.startsWith('/9j/') ? 'image/jpeg' : data.startsWith('UklGR') ? 'image/webp' : 'image/png' }
 
+function bytesFromBase64(data: string) {
+  const normalized = data.replace(/\s/g, '')
+  const binary = atob(normalized)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+function triggerDownload(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+async function saveImageAsPng(data: string, name: string) {
+  const mime = imageMime(data)
+  const blob = new Blob([bytesFromBase64(data)], { type: mime })
+  if (mime === 'image/png') {
+    triggerDownload(blob, name)
+    toast.success('已保存 PNG')
+    return
+  }
+  const source = URL.createObjectURL(blob)
+  try {
+    const image = new Image()
+    const png = await new Promise<Blob>((resolve, reject) => {
+      image.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = image.naturalWidth
+        canvas.height = image.naturalHeight
+        const context = canvas.getContext('2d')
+        if (!context) { reject(new Error('无法创建画布')); return }
+        context.drawImage(image, 0, 0)
+        canvas.toBlob(file => file ? resolve(file) : reject(new Error('无法转为 PNG')), 'image/png')
+      }
+      image.onerror = () => reject(new Error('图像数据无法读取'))
+      image.src = source
+    })
+    triggerDownload(png, name)
+    toast.success('已转为 PNG 并保存')
+  } finally { URL.revokeObjectURL(source) }
+}
+
+function previewJson(value: unknown) {
+  return JSON.stringify(value, (key, item) => {
+    if ((key === 'b64_json' || key === 'result') && typeof item === 'string' && item.length > 180) return `[图像数据已显示为图片，保存时会下载 PNG，共 ${item.length} 字符]`
+    return item
+  }, 2)
+}
+
 export function ResultPanel({ result, image = false, children }: { result: ResultData; image?: boolean; children?: ReactNode }) {
   const json = result.json
-  const raw = json !== undefined ? JSON.stringify(json, null, 2) : result.text || ''
+  const shown = json !== undefined ? previewJson(json) : result.text || ''
+  const raw = image ? '' : shown
   const data = json && typeof json === 'object' && 'data' in json && Array.isArray(json.data) ? json.data : []
   const audioChoices = json && typeof json === 'object' && 'choices' in json && Array.isArray(json.choices) ? json.choices : []
-  const images = image ? data : []
+  const images = image ? data as Record<string, string>[] : []
+  const previews = useMemo(() => images.map(entry => {
+    if (!entry.b64_json) return entry.url || ''
+    return URL.createObjectURL(new Blob([bytesFromBase64(entry.b64_json)], { type: imageMime(entry.b64_json) }))
+  }), [result])
+  useEffect(() => () => { for (const url of previews) if (url.startsWith('blob:')) URL.revokeObjectURL(url) }, [previews])
   return <div className="result-panel">
-    <div className="result-heading"><span><Check size={14} />请求完成</span><div className="actions">{raw && <button className="icon-button" title="复制结果" onClick={() => navigator.clipboard.writeText(raw).then(() => toast.success('已复制结果')).catch(() => toast.error('无法访问剪贴板'))}><Copy size={15} /></button>}{raw && <button className="icon-button" title="下载结果" onClick={() => downloadText(raw, 'openai-result.' + (json !== undefined ? 'json' : 'txt'))}><Download size={15} /></button>}</div></div>
+    <div className="result-heading"><span><Check size={14} />请求完成</span><div className="actions">{shown && <button className="icon-button" title="复制结果" onClick={() => navigator.clipboard.writeText(shown).then(() => toast.success('已复制结果')).catch(() => toast.error('无法访问剪贴板'))}><Copy size={15} /></button>}{raw && !image && <button className="icon-button" title="下载结果" onClick={() => downloadText(raw, 'openai-result.' + (json !== undefined ? 'json' : 'txt'))}><Download size={15} /></button>}</div></div>
     {children}
-    {images.length > 0 && <div className="image-results">{images.map((entry: Record<string, string>, index: number) => {
-      const source = entry.b64_json ? `data:${imageMime(entry.b64_json)};base64,${entry.b64_json}` : entry.url
-      return <figure key={index}>{source && <img src={source} alt={'生成的图像 ' + (index + 1)} loading="lazy" />}<figcaption>{entry.revised_prompt || `图像 ${index + 1}`}<a href={source} download={`openai-image-${index + 1}.${entry.b64_json ? imageMime(entry.b64_json).split('/')[1] : 'png'}`} target="_blank" rel="noreferrer"><Download size={14} />保存图像</a></figcaption></figure>
+    {images.length > 0 && <div className="image-results">{images.map((entry, index) => {
+      const source = previews[index]
+      const filename = `openai-image-${index + 1}.png`
+      return <figure key={index}>{source && <img src={source} alt={'生成的图像 ' + (index + 1)} />}<figcaption>{entry.revised_prompt || `图像 ${index + 1}`}{entry.b64_json ? <button type="button" onClick={() => void saveImageAsPng(entry.b64_json, filename).catch(error => toast.error((error as Error).message))}><Download size={14} />保存为 PNG</button> : source ? <a href={source} download={filename}><Download size={14} />保存图像</a> : null}</figcaption></figure>
     })}</div>}
     {audioChoices.map((choice: { message?: { audio?: { data?: string; transcript?: string } } }, i: number) => choice.message?.audio?.data ? <div className="audio-result" key={i}><audio controls src={'data:audio/wav;base64,' + choice.message.audio.data} /><p>{choice.message.audio.transcript}</p><small>此声音由 AI 生成。</small></div> : null)}
     {result.url && <div className="media-result">{result.mime?.startsWith('audio/') ? <><audio controls src={result.url} /><p className="field-hint">此声音由 AI 生成。</p></> : result.mime?.startsWith('video/') ? <video controls src={result.url} /> : null}<a className="button secondary" href={result.url} download={result.filename}><Download size={15} />下载文件</a></div>}
     {!images.length && result.text && <pre className="text-result">{result.text}</pre>}
-    {json !== undefined && <details className="raw-response" open={!image && !children && !audioChoices.length}><summary>原始响应 <span>JSON</span></summary><pre>{raw.slice(0,60000)}{raw.length > 60000 && '\n… 内容较长，请下载查看完整结果。'}</pre></details>}
+    {json !== undefined && <details className="raw-response" open={!image && !children && !audioChoices.length && !images.length}><summary>原始响应 <span>JSON</span></summary><pre>{shown.slice(0,60000)}{shown.length > 60000 && '\n… 内容较长，请下载查看完整结果。'}</pre></details>}
     {result.requestId && <div className="request-id">Request ID <code>{result.requestId}</code></div>}
   </div>
 }
